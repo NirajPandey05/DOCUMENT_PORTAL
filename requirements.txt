@@ -1,0 +1,23 @@
+langchain
+python-dotenv
+langchain_groq
+langchain_google_genai
+langchain_community
+langchain_text_splitters
+pypdf
+faiss-cpu
+tqdm
+structlog
+PyMuPDF
+pandas
+pydantic
+langchain_core
+docx
+streamlit
+pytest
+langchain-core[tracing]
+doc2txt
+docx2txt
+uvicorn
+fastapi
+-e .

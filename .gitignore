@@ -1,0 +1,14 @@
+env
+.env
+document_portal.egg-info
+venv/
+__pycache__/
+logs/
+*.pyc
+test.py
+archive/
+data/
+faiss_index/
+logs/
+notebook/
+class_notes_7_26_2025.txt
