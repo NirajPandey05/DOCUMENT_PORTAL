@@ -12,3 +12,8 @@ faiss_index/
 logs/
 notebook/
 class_notes_7_26_2025.txt
+.vscode/
+.deepeval/
+.pytest_cache/
+.ipynb_checkpoints/
+api/users.json
