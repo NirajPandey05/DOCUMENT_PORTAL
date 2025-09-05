@@ -44,31 +44,10 @@ class FaissManager:
     
     @staticmethod
     def _fingerprint(text: str, md: Dict[str, Any]) -> str:
-        # Create unique fingerprint based on content type
         src = md.get("source") or md.get("file_path")
-        content_type = md.get("type", "text")
-        
-        if content_type == "image":
-            # For images, use image_id if available
-            image_id = md.get("image_id")
-            if image_id:
-                return f"image::{src}::{image_id}"
-        elif content_type == "table":
-            # For tables, include sheet/page info
-            sheet = md.get("sheet_name")
-            page = md.get("page")
-            table_id = f"::{sheet if sheet else page if page else ''}"
-            return f"table::{src}{table_id}"
-        elif content_type == "database_record":
-            # For database records, use table and row info
-            table = md.get("table_name")
-            rid = md.get("row_id")
-            return f"db::{table}::{rid}"
-            
-        # Default to source-based or content hash
+        rid = md.get("row_id")
         if src is not None:
-            rid = md.get("row_id")
-            return f"{content_type}::{src}::{'' if rid is None else rid}"
+            return f"{src}::{'' if rid is None else rid}"
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
     
     def _save_meta(self):
@@ -234,7 +213,6 @@ class DocHandler:
         except Exception as e:
             log.error("Failed to read PDF", error=str(e), pdf_path=pdf_path, session_id=self.session_id)
             raise DocumentPortalException(f"Could not process PDF: {pdf_path}", e) from e
-        
 class DocumentComparator:
     """
     Save, read & combine PDFs for comparison with session-based versioning.

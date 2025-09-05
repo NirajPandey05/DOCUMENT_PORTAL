@@ -15,7 +15,8 @@ from src.document_ingestion.data_ingestion import (
 from src.document_analyzer.data_analysis import DocumentAnalyzer
 from src.document_compare.document_comparator import DocumentComparatorLLM
 from src.document_chat.retrieval import ConversationalRAG
-from utils.document_ops import FastAPIFileAdapter,read_pdf_via_handler
+from utils.document_ops import FastAPIFileAdapter,read_pdf_via_handler,extract_text_and_tables,load_documents
+from utils.eval_metrics import ResponseEvaluator
 
 FAISS_BASE = os.getenv("FAISS_BASE", "faiss_index")
 UPLOAD_BASE = os.getenv("UPLOAD_BASE", "data")
@@ -51,10 +52,29 @@ async def analyze_document(file: UploadFile = File(...)) -> Any:
     try:
         dh = DocHandler()
         saved_path = dh.save_pdf(FastAPIFileAdapter(file))
-        text = read_pdf_via_handler(dh, saved_path)
+        # Use load_documents to get all text/tables/images, then extract text/tables for LLM context
+        docs = load_documents([Path(saved_path)])
+        from logger import GLOBAL_LOGGER as log
+        log.info("Loaded document page_contents", page_contents=[d.page_content for d in docs])
+        context = extract_text_and_tables(docs, ocr_images=True)
+        # Truncate context to avoid exceeding LLM token limits (e.g., 6000 tokens)
+        context = context[:5000] if context else None
+        log.info("LLM context for analysis (FULL)", context=context)
         analyzer = DocumentAnalyzer()
-        result = analyzer.analyze_document(text)
-        return JSONResponse(content=result)
+        result = analyzer.analyze_document(context)
+
+        # Evaluate the analysis result using DeepEval
+        evaluator = ResponseEvaluator()
+        # Use the first 5000 chars of the document as context for evaluation (more context for LLM)
+        context_eval = context[:5000] if context else None
+        # If result is a dict with 'summary' or 'result', use that as response
+        response = result.get('summary') if isinstance(result, dict) and 'summary' in result else (
+            result.get('result') if isinstance(result, dict) and 'result' in result else str(result)
+        )
+        evaluation = evaluator.evaluate_response(
+            question="Analyze document", response=response, context=context_eval
+        )
+        return JSONResponse(content={"result": result, "evaluation": evaluation})
     except HTTPException:
         raise
     except Exception as e:
@@ -68,11 +88,29 @@ async def compare_documents(reference: UploadFile = File(...), actual: UploadFil
         ref_path, act_path = dc.save_uploaded_files(
             FastAPIFileAdapter(reference), FastAPIFileAdapter(actual)
         )
-        _ = ref_path, act_path
-        combined_text = dc.combine_documents()
+        # Use load_documents to get all text/tables/images for both reference and actual
+        ref_docs = load_documents([Path(ref_path)])
+        act_docs = load_documents([Path(act_path)])
+        # Extract all text and tables for LLM context
+        ref_context = extract_text_and_tables(ref_docs, ocr_images=True)
+        act_context = extract_text_and_tables(act_docs, ocr_images=True)
+        from logger import GLOBAL_LOGGER as log
+        log.info("LLM context for comparison (FULL)", ref_context=ref_context, act_context=act_context)
+        # Combine for comparison context
+        combined_context = f"<<REFERENCE_DOCUMENTS>>\n{ref_context}\n\n<<ACTUAL_DOCUMENTS>>\n{act_context}"
         comp = DocumentComparatorLLM()
-        df = comp.compare_documents(combined_text)
-        return {"rows": df.to_dict(orient="records"), "session_id": dc.session_id}
+        df = comp.compare_documents(combined_context)
+
+        # Evaluate the comparison result using DeepEval
+        evaluator = ResponseEvaluator()
+        # Use the first 5000 chars of the combined context for evaluation
+        context_eval = combined_context[:5000] if combined_context else None
+        # Use the first row of the DataFrame as the response (stringified)
+        response = str(df.iloc[0].to_dict()) if not df.empty else "No comparison result."
+        evaluation = evaluator.evaluate_response(
+            question="Compare documents", response=response, context=context_eval
+        )
+        return {"rows": df.to_dict(orient="records"), "session_id": dc.session_id, "evaluation": evaluation}
     except HTTPException:
         raise
     except Exception as e:

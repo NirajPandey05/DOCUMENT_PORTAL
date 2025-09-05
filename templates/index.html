@@ -9,6 +9,35 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="/static/style.css" rel="stylesheet" />
+  <style>
+    .eval-metrics-small {
+      font-size: 0.72em;
+      color: #fff;
+      opacity: 0.85;
+      margin-top: 0.5em;
+    }
+    .eval-metrics-small ul {
+      margin: 0;
+      padding-left: 1.2em;
+    }
+    .eval-metrics-small li {
+      color: #fff;
+    }
+    .eval-metrics-small .metric-error {
+      color: #ff4444;
+    }
+    .eval-metrics-small .metric-skipped {
+      color: #bbb;
+    }
+    .eval-metrics-small .metric-name {
+      font-weight: bold;
+      color: #fff;
+    }
+    .eval-metrics-small .metric-value {
+      font-weight: normal;
+      color: #fff;
+    }
+  </style>
 </head>
 <body>
   <header class="app-header">
@@ -42,6 +71,7 @@
         <div id="an-result" class="result-block">
           <h3>Result</h3>
           <pre class="code" id="an-json">Waiting for analysis…</pre>
+          <div id="an-eval" class="eval-metrics-small"></div>
         </div>
       </div>
     </section>
@@ -145,6 +175,8 @@
         <div id="chat-ans" class="result-block">
           <h3>Answer</h3>
           <div class="answer" id="chat-answer">No answer yet.</div>
+          <div class="evaluation eval-metrics-small" id="chat-eval" style="margin-top:1em;"></div>
+          
         </div>
       </div>
     </section>
@@ -188,7 +220,30 @@
         throw new Error(err.detail || `HTTP ${res.status}`);
       }
       const json = await res.json();
-      out.textContent = JSON.stringify(json, null, 2);
+      out.textContent = JSON.stringify(json.result !== undefined ? json.result : json, null, 2);
+      // Show evaluation metrics in very small font, white text, red for errors, bold metric names only
+      const evalDiv = document.getElementById("an-eval");
+      if (json.evaluation) {
+        let html = '<div><b>Evaluation Metrics</b><ul>';
+        for (const [metric, val] of Object.entries(json.evaluation)) {
+          if (val && typeof val === 'object') {
+            if ('score' in val || 'reason' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> `;
+              if ('score' in val) html += `<span class="metric-value">Score: ${val.score}. </span>`;
+              if ('reason' in val) html += `<span class="metric-value">${val.reason}</span>`;
+              html += '</li>';
+            } else if ('error' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> <span class="metric-error">${val.error}</span></li>`;
+            } else if ('skipped' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> <span class="metric-skipped">${val.skipped}</span></li>`;
+            }
+          }
+        }
+        html += '</ul></div>';
+        evalDiv.innerHTML = html;
+      } else {
+        evalDiv.innerHTML = '';
+      }
     } catch (e) {
       out.textContent = "Error: " + (e.message || e);
     }
@@ -274,17 +329,20 @@
   document.getElementById("btn-ask").addEventListener("click", async () => {
     const q        = document.getElementById("chat-q").value.trim();
     const ans      = document.getElementById("chat-answer");
+    const evalDiv  = document.getElementById("chat-eval");
     const useSess  = document.getElementById("chat-sessionized").checked;
     const k        = +document.getElementById("chat-k").value || 5;
 
-    if (!q) { ans.textContent = "Please enter a question."; return; }
+    if (!q) { ans.textContent = "Please enter a question."; evalDiv.textContent = ""; return; }
     if (useSess && !currentSession) {
       ans.textContent = "Build the index first (session-based mode is ON).";
+      evalDiv.textContent = "";
       return;
     }
 
     try {
       ans.textContent = "Thinking…";
+      evalDiv.textContent = "";
 
       const fd = new FormData();
       fd.append("question", q);
@@ -297,10 +355,40 @@
         const err = await res.json().catch(()=>({detail:res.statusText}));
         throw new Error(err.detail || `HTTP ${res.status}`);
       }
-      const json = await res.json(); // { answer, ... }
-      ans.textContent = json.answer || "No answer.";
+      const json = await res.json();
+
+
+      // Robust answer extraction for new backend format
+      let answerObj = json.answer || json;
+      let answer = answerObj.response || answerObj.answer_preview || "No answer.";
+      ans.textContent = answer;
+
+      // Show evaluation metrics if present
+      let evaluation = answerObj.evaluation || json.evaluation;
+      if (evaluation) {
+        let html = '<div><b>Evaluation Metrics</b><ul>';
+        for (const [metric, val] of Object.entries(evaluation)) {
+          if (val && typeof val === 'object') {
+            if ('score' in val || 'reason' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> `;
+              if ('score' in val) html += `<span class="metric-value">Score: ${val.score}. </span>`;
+              if ('reason' in val) html += `<span class="metric-value">${val.reason}</span>`;
+              html += '</li>';
+            } else if ('error' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> <span class="metric-error">${val.error}</span></li>`;
+            } else if ('skipped' in val) {
+              html += `<li><span class="metric-name">${metric}:</span> <span class="metric-skipped">${val.skipped}</span></li>`;
+            }
+          }
+        }
+        html += '</ul></div>';
+        evalDiv.innerHTML = html;
+      } else {
+        evalDiv.textContent = "";
+      }
     } catch (e) {
       ans.textContent = "Query failed: " + (e.message || e);
+  evalDiv.textContent = "";
     }
   });
 </script>

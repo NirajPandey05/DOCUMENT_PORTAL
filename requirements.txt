@@ -1,10 +1,10 @@
-langchain==0.3.26
+langchain
+langchain-community
 python-dotenv==1.1.1
 ipykernel==6.29.5
 langchain_groq==0.3.6
 langchain_google_genai==2.1.8
-langchain_community==0.3.27
-langchain_text_splitters==0.3.8
+langchain-text-splitters
 pypdf==5.8.0
 faiss-cpu==1.11.0.post1
 tqdm==4.67.1
@@ -12,7 +12,6 @@ structlog==25.4.0
 PyMuPDF==1.26.3
 pandas==2.3.1
 pydantic==2.11.7
-langchain_core==0.3.69
 docx==0.2.4
 streamlit==1.47.1
 pytest==8.4.1
@@ -22,4 +21,16 @@ docx2txt==0.9
 uvicorn==0.35.0
 fastapi==0.116.1
 cfn-lint
+# New dependencies for enhanced document processing
+pytesseract==0.3.10
+Pillow
+python-pptx==0.6.22
+openpyxl==3.1.2
+tabula-py==2.9.0
+markdown-it-py==3.0.0
+SQLAlchemy==2.0.28
+psycopg2-binary==2.9.9
+deepeval==3.4.7
+pdfplumber
+unstructured
 -e .

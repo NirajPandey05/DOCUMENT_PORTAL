@@ -1,0 +1,50 @@
+repos:
+	- repo: https://github.com/psf/black
+		rev: 24.3.0
+		hooks:
+			- id: black
+				language_version: python3
+	- repo: https://github.com/pycqa/flake8
+		rev: 7.0.0
+		hooks:
+			- id: flake8
+	- repo: https://github.com/pre-commit/mirrors-mypy
+		rev: v1.8.0
+		hooks:
+			- id: mypy
+	- repo: https://github.com/pre-commit/pre-commit-hooks
+		rev: v4.5.0
+		hooks:
+			- id: check-yaml
+			- id: end-of-file-fixer
+			- id: trailing-whitespace
+	- repo: local
+		hooks:
+			- id: pytest-comprehensive
+				name: pytest comprehensive
+				entry: pytest tests/test_comprehensive.py -v
+				language: system
+				pass_filenames: false
+				always_run: true
+				stages: [commit]
+			- id: pytest-cache
+				name: pytest cache
+				entry: pytest tests/test_cache.py -v
+				language: system
+				pass_filenames: false
+				always_run: true
+				stages: [commit]
+			- id: pytest-rag-cache
+				name: pytest rag cache
+				entry: pytest tests/test_rag_cache.py -v
+				language: system
+				pass_filenames: false
+				always_run: true
+				stages: [commit]
+			- id: pytest-routes
+				name: pytest routes
+				entry: pytest tests/test_routes.py -v
+				language: system
+				pass_filenames: false
+				always_run: true
+				stages: [commit]
