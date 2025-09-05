@@ -24,7 +24,6 @@ cfn-lint
 # New dependencies for enhanced document processing
 pytesseract==0.3.10
 Pillow
-python-pptx==0.6.22
 openpyxl==3.1.2
 tabula-py==2.9.0
 markdown-it-py==3.0.0
@@ -32,5 +31,6 @@ SQLAlchemy==2.0.28
 psycopg2-binary==2.9.9
 deepeval==3.4.7
 pdfplumber
-unstructured
+unstructured[all]
+python-pptx
 -e .

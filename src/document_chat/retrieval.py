@@ -118,30 +118,31 @@ class ConversationalRAG:
                 )
             chat_history = chat_history or []
             payload = {"input": user_input, "chat_history": chat_history}
-            
+
             # Get context from retriever
             question = self.contextualize_prompt.invoke({
                 "input": user_input,
                 "chat_history": chat_history
             }).to_string()
-            context = self._format_docs(self.retriever.invoke(question))
-            
+            retrieved_docs = self.retriever.invoke(question)
+            context = self._format_docs(retrieved_docs)
+
             # Generate answer
             answer = self.chain.invoke(payload)
-            
+
             if not answer:
                 log.warning(
                     "No answer generated", user_input=user_input, session_id=self.session_id
                 )
-                return {"response": "no answer generated.", "evaluation": None}
-            
+                return {"response": "no answer generated.", "evaluation": None, "context": context}
+
             # Evaluate the response
             evaluation_results = self.evaluator.evaluate_response(
                 question=user_input,
                 response=answer,
-                context=context
+                context="\n\n".join([c["summary"] for c in context])
             )
-            
+
             log.info(
                 "Chain invoked successfully with evaluation",
                 session_id=self.session_id,
@@ -149,7 +150,7 @@ class ConversationalRAG:
                 answer_preview=str(answer)[:150],
                 evaluation_summary=evaluation_results
             )
-            
+
             return {
                 "response": answer,
                 "evaluation": evaluation_results,
@@ -173,15 +174,26 @@ class ConversationalRAG:
             raise DocumentPortalException("LLM loading error in ConversationalRAG", sys)
 
     @staticmethod
-    def _format_docs(docs) -> str:
-        return "\n\n".join(getattr(d, "page_content", str(d)) for d in docs)
+    def _format_docs(docs) -> list:
+        # Return a list of dicts with summary, original, and metadata for each doc
+        formatted = []
+        for d in docs:
+            summary = getattr(d, "page_content", str(d))
+            meta = getattr(d, "metadata", {})
+            original = meta.get("original", summary)
+            formatted.append({
+                "summary": summary,
+                "original": original,
+                "metadata": meta
+            })
+        return formatted
     
     def _get_cached_context(self, question: str) -> Optional[str]:
         """Get cached context for a question if available."""
         return self._context_cache.get(question)
     
-    def _cache_context(self, question: str, context: str):
-        """Cache context for a question."""
+    def _cache_context(self, question: str, context):
+        """Cache context for a question (list of dicts)."""
         self._context_cache[question] = context
         # Implement basic cache size management
         if len(self._context_cache) > 1000:  # Limit cache size

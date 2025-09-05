@@ -9,7 +9,7 @@ from typing import Iterable, List
 from logger import GLOBAL_LOGGER as log
 from exception.custom_exception import DocumentPortalException
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".ppt", ".pptx", ".xlsx", ".xls", ".csv", ".md"}
 
 # ----------------------------- #
 # Helpers (file I/O + loading)  #
@@ -21,13 +21,14 @@ def generate_session_id(prefix: str = "session") -> str:
 def save_uploaded_files(uploaded_files: Iterable, target_dir: Path) -> List[Path]:
     """Save uploaded files (Streamlit-like) and return local paths."""
     try:
+        log.info("save_uploaded_files called", supported_extensions=list(SUPPORTED_EXTENSIONS))
         target_dir.mkdir(parents=True, exist_ok=True)
         saved: List[Path] = []
         for uf in uploaded_files:
             name = getattr(uf, "name", "file")
             ext = Path(name).suffix.lower()
             if ext not in SUPPORTED_EXTENSIONS:
-                log.warning("Unsupported file skipped", filename=name)
+                log.warning("Unsupported file skipped", filename=name, extension=ext, supported=list(SUPPORTED_EXTENSIONS))
                 continue
             # Clean file name (only alphanum, dash, underscore)
             safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', Path(name).stem).lower()
@@ -40,7 +41,8 @@ def save_uploaded_files(uploaded_files: Iterable, target_dir: Path) -> List[Path
                 else:
                     f.write(uf.getbuffer())  # fallback
             saved.append(out)
-            log.info("File saved for ingestion", uploaded=name, saved_as=str(out))
+            log.info("File saved for ingestion", uploaded=name, saved_as=str(out), extension=ext)
+        log.info("All files processed in save_uploaded_files", total_uploaded=len(saved))
         return saved
     except Exception as e:
         log.error("Failed to save uploaded files", error=str(e), dir=str(target_dir))

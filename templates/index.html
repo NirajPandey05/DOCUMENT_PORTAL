@@ -16,6 +16,17 @@
       opacity: 0.85;
       margin-top: 0.5em;
     }
+    .retrieved-context-small {
+      font-size: 0.72em;
+      color: #fff;
+      opacity: 0.85;
+      background: #222;
+      border-radius: 6px;
+      padding: 0.5em 1em;
+      margin-top: 0.5em;
+      margin-bottom: 1em;
+      word-break: break-word;
+    }
     .eval-metrics-small ul {
       margin: 0;
       padding-left: 1.2em;
@@ -120,7 +131,7 @@
         <form id="form-chat-index" class="form-grid" onsubmit="return false;">
           <div class="field">
             <label for="chat-files">Upload files</label>
-            <input id="chat-files" type="file" multiple accept=".pdf,.docx,.txt" />
+            <input id="chat-files" type="file" multiple accept=".pdf,.docx,.txt,.ppt,.pptx,.xlsx,.xls,.csv,.md" />
             <small class="help">You can select multiple files.</small>
           </div>
 
@@ -176,7 +187,7 @@
           <h3>Answer</h3>
           <div class="answer" id="chat-answer">No answer yet.</div>
           <div class="evaluation eval-metrics-small" id="chat-eval" style="margin-top:1em;"></div>
-          
+          <div id="chat-contexts" class="context-block retrieved-context-small" style="margin-top:1.5em;"></div>
         </div>
       </div>
     </section>
@@ -357,7 +368,6 @@
       }
       const json = await res.json();
 
-
       // Robust answer extraction for new backend format
       let answerObj = json.answer || json;
       let answer = answerObj.response || answerObj.answer_preview || "No answer.";
@@ -385,6 +395,29 @@
         evalDiv.innerHTML = html;
       } else {
         evalDiv.textContent = "";
+      }
+
+      // Show retrieved context (summary + expandable original)
+      const ctxDiv = document.getElementById("chat-contexts");
+      ctxDiv.innerHTML = "";
+      let contextList = answerObj.context || [];
+      if (Array.isArray(contextList) && contextList.length > 0) {
+        let html = `<div><b>Retrieved Context</b></div><div class='ctx-list'>`;
+        contextList.forEach((ctx, idx) => {
+          let meta = ctx.metadata || {};
+          html += `<div class='ctx-item' style='margin-bottom:1em;'>`;
+          html += `<div class='ctx-summary'><b>Summary ${idx+1}:</b> <span>${ctx.summary}</span></div>`;
+          html += `<button class='btn btn-small' type='button' onclick='this.nextElementSibling.style.display = (this.nextElementSibling.style.display=="block"?"none":"block")'>Show Original</button>`;
+          html += `<div class='ctx-original' style='display:none; margin-top:0.5em;'><b>Original:</b><pre style='white-space:pre-wrap;'>${ctx.original}</pre>`;
+          if (Object.keys(meta).length > 0) {
+            html += `<div class='ctx-meta'><b>Metadata:</b> <pre style='white-space:pre-wrap;'>${JSON.stringify(meta, null, 2)}</pre></div>`;
+          }
+          html += `</div></div>`;
+        });
+        html += `</div>`;
+        ctxDiv.innerHTML = html;
+      } else {
+        ctxDiv.innerHTML = "<div class='muted small'>No retrieved context.</div>";
       }
     } catch (e) {
       ans.textContent = "Query failed: " + (e.message || e);

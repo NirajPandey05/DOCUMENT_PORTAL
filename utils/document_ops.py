@@ -60,38 +60,62 @@ SUPPORTED_EXTENSIONS = {
     ".xlsx", ".xls", ".csv", ".md"
 }
 
+# --- Website Loader Helper ---
+def process_website(url: str) -> List[Document]:
+    """Load website content as a Document."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Extract visible text
+        text = " ".join(soup.stripped_strings)
+        return [Document(page_content=text, metadata={"source": url, "type": "website"})]
+    except Exception as e:
+        log.error("Failed to load website", url=url, error=str(e))
+        return []
 
-def load_documents(paths: Iterable[Path]) -> List[Document]:
-    """Load docs using appropriate loader based on extension."""
+
+def load_documents(paths: Iterable, allow_web: bool = False) -> List[Document]:
+    """Load docs using appropriate loader based on extension. If allow_web is True, also load website URLs."""
     docs: List[Document] = []
     try:
-        # Accept both str and Path
         from pathlib import Path
-        paths = [Path(p) if not isinstance(p, Path) else p for p in paths]
         for p in paths:
+            # If allow_web and looks like a URL, treat as website
+            if allow_web and (isinstance(p, str) and (p.startswith("http://") or p.startswith("https://"))):
+                log.info("Processing website URL", url=p)
+                docs.extend(process_website(p))
+                continue
+            # Accept both str and Path
+            p = Path(p) if not isinstance(p, Path) else p
             ext = p.suffix.lower()
-            # Standard document loaders
+            log.info("Processing file for loading", path=str(p), extension=ext)
             if ext == ".pdf":
+                log.info("Loading PDF with PyPDFLoader", path=str(p))
                 loader = PyPDFLoader(str(p))
                 docs.extend(process_pdf_with_tables(loader, p))
             elif ext == ".docx":
+                log.info("Loading DOCX with Docx2txtLoader", path=str(p))
                 loader = Docx2txtLoader(str(p))
                 docs.extend(process_docx(loader, p))
             elif ext == ".txt":
+                log.info("Loading TXT with TextLoader", path=str(p))
                 loader = TextLoader(str(p), encoding="utf-8")
                 docs.extend(process_txt(loader, p))
-            # PowerPoint files
             elif ext in {".ppt", ".pptx"}:
                 try:
+                    log.info("Loading PowerPoint with UnstructuredPowerPointLoader", path=str(p))
                     from langchain_community.document_loaders import UnstructuredPowerPointLoader
                     loader = UnstructuredPowerPointLoader(str(p))
                     docs.extend(process_ppt(loader, p))
                 except ImportError:
                     log.warning("Unstructured not available, skipping PowerPoint file", path=str(p))
                     continue
-            # Excel and CSV files
             elif ext in {".xlsx", ".xls"}:
                 try:
+                    log.info("Loading Excel with UnstructuredExcelLoader", path=str(p))
                     from langchain_community.document_loaders import UnstructuredExcelLoader
                     loader = UnstructuredExcelLoader(str(p), mode="elements")
                     docs.extend(process_excel(loader, p))
@@ -99,10 +123,15 @@ def load_documents(paths: Iterable[Path]) -> List[Document]:
                     log.warning("Unstructured not available, skipping Excel file", path=str(p))
                     continue
             elif ext == ".csv":
+                log.info("Loading CSV with CSVLoader", path=str(p))
                 loader = CSVLoader(str(p))
                 docs.extend(process_csv(loader, p))
+            elif ext == ".md":
+                log.info("Loading Markdown as text with TextLoader", path=str(p))
+                loader = TextLoader(str(p), encoding="utf-8")
+                docs.extend(process_txt(loader, p))
             else:
-                log.warning("Unsupported extension skipped", path=str(p))
+                log.warning("Unsupported extension skipped", path=str(p), extension=ext, supported=list(SUPPORTED_EXTENSIONS))
                 continue
         log.info("Documents loaded", count=len(docs))
         return docs
@@ -198,7 +227,8 @@ def process_pdf_with_tables(loader, pdf_path: Path) -> List[Document]:
                         metadata={
                             "source": str(pdf_path),
                             "type": "text",
-                            "page": page_num+1
+                            "page": page_num+1,
+                            "summary": None  # To be filled by downstream summarization
                         }
                     ))
                     log.info("PDF page text extracted", path=str(pdf_path), page=page_num+1, text_preview=text[:200])
@@ -213,13 +243,15 @@ def process_pdf_with_tables(loader, pdf_path: Path) -> List[Document]:
                                 "source": str(pdf_path),
                                 "type": "table",
                                 "table_index": t_idx,
-                                "page": page_num+1
+                                "page": page_num+1,
+                                "summary": None  # To be filled by downstream summarization
                             }
                         ))
                         log.info("PDF table extracted", path=str(pdf_path), page=page_num+1, table_index=t_idx)
     except Exception as e:
         log.error("Failed to extract PDF text/tables with pdfplumber", path=str(pdf_path), error=str(e))
-    # 3. Extract images using fitz (PyMuPDF)
+
+    # Extract images using fitz (PyMuPDF)
     try:
         import fitz
         from PIL import Image
@@ -239,7 +271,8 @@ def process_pdf_with_tables(loader, pdf_path: Path) -> List[Document]:
                         "page": page_num+1,
                         "image_index": img_index+1,
                         "image_ext": image_ext,
-                        "image_bytes": image_bytes
+                        "image_bytes": image_bytes,
+                        "summary": None  # To be filled by downstream summarization (e.g., Gemini Vision)
                     }
                 ))
     except Exception as e:

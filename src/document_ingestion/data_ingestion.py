@@ -1,4 +1,7 @@
+
 from __future__ import annotations
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+import importlib
 import os
 import sys
 import json
@@ -15,9 +18,8 @@ from utils.model_loader import ModelLoader
 from logger import GLOBAL_LOGGER as log
 from exception.custom_exception import DocumentPortalException
 from utils.file_io import generate_session_id, save_uploaded_files
-from utils.document_ops import load_documents, concat_for_analysis, concat_for_comparison
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+from utils.document_ops import load_documents, concat_for_analysis, concat_for_comparison
 
 # FAISS Manager (load-or-create)
 class FaissManager:
@@ -155,6 +157,35 @@ class ChatIngestor:
         chunks = splitter.split_documents(docs)
         log.info("Documents split", chunks=len(chunks), chunk_size=chunk_size, overlap=chunk_overlap)
         return chunks
+
+    def _summarize_chunk(self, chunk: Document) -> Dict[str, str]:
+        """Summarize a chunk (text/table/image) using Gemini. Returns dict with summary and original."""
+        content_type = chunk.metadata.get("type", "text")
+        summary = None
+        # Use Gemini for text/table
+        if content_type in ("text", "table"):
+            try:
+                llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest")
+                prompt = f"Summarize the following {content_type} for retrieval:\n{chunk.page_content}"
+                summary = llm.invoke(prompt).content
+            except Exception as e:
+                log.warning("Gemini LLM summarization failed", error=str(e))
+                summary = chunk.page_content[:512]  # fallback: truncate
+        elif content_type == "image":
+            # Try Gemini Vision if available
+            try:
+                if importlib.util.find_spec("langchain_google_genai"):
+                    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-vision-latest")
+                    prompt = "Summarize the content of this image for retrieval."
+                    # Assume image bytes in metadata
+                    image_bytes = chunk.metadata.get("image_bytes")
+                    if image_bytes:
+                        summary = llm.invoke(prompt, images=[image_bytes]).content
+            except Exception as e:
+                log.warning("Gemini Vision summarization failed", error=str(e))
+        if not summary:
+            summary = "[No summary available]"
+        return {"summary": summary, "original": chunk.page_content}
     
     def built_retriver( self,
         uploaded_files: Iterable,
@@ -164,31 +195,34 @@ class ChatIngestor:
         k: int = 5,):
         try:
             paths = save_uploaded_files(uploaded_files, self.temp_dir)
-            docs = load_documents(paths)
+            # Enable all supported types and website URLs for chat ingestion
+            docs = load_documents(paths, allow_web=True)
             if not docs:
                 raise ValueError("No valid documents loaded")
-            
+
             chunks = self._split(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            
-            ## FAISS manager very very important class for the docchat
+            summarized_chunks = []
+            for chunk in chunks:
+                summary_info = self._summarize_chunk(chunk)
+                # Store both summary and original in metadata
+                meta = dict(chunk.metadata)
+                meta["summary"] = summary_info["summary"]
+                meta["original"] = summary_info["original"]
+                summarized_chunks.append(Document(page_content=summary_info["summary"], metadata=meta))
+
             fm = FaissManager(self.faiss_dir, self.model_loader)
-            
-            texts = [c.page_content for c in chunks]
-            metas = [c.metadata for c in chunks]
-            
+            texts = [c.page_content for c in summarized_chunks]
+            metas = [c.metadata for c in summarized_chunks]
             try:
                 vs = fm.load_or_create(texts=texts, metadatas=metas)
             except Exception:
                 vs = fm.load_or_create(texts=texts, metadatas=metas)
-                
-            added = fm.add_documents(chunks)
-            log.info("FAISS index updated", added=added, index=str(self.faiss_dir))
-            
+            added = fm.add_documents(summarized_chunks)
+            log.info("FAISS index updated (multimodal)", added=added, index=str(self.faiss_dir))
             return vs.as_retriever(search_type="similarity", search_kwargs={"k": k})
-            
         except Exception as e:
-            log.error("Failed to build retriever", error=str(e))
-            raise DocumentPortalException("Failed to build retriever", e) from e
+            log.error("Failed to build retriever (multimodal)", error=str(e))
+            raise DocumentPortalException("Failed to build retriever (multimodal)", e) from e
 
             
         

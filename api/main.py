@@ -2,6 +2,8 @@ import os
 from typing import List, Optional, Any, Dict
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
+import json
+import hashlib
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -36,7 +38,72 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Home page: login or create new profile
 @app.get("/", response_class=HTMLResponse)
+async def serve_home(request: Request):
+    resp = templates.TemplateResponse("home.html", {"request": request})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+# --- User Auth Helpers ---
+USER_DB_PATH = BASE_DIR / "api" / "users.json"
+def load_users():
+    try:
+        with open(USER_DB_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+def save_users(users):
+    with open(USER_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+def hash_pw(pw):
+    return hashlib.sha256(pw.encode("utf-8")).hexdigest()
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_get(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_post(request: Request):
+    form = await request.form()
+    username = form.get("username")
+    password = form.get("password")
+    users = load_users()
+    if not username or not password:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Please enter username and password."})
+    if username not in users:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Profile not found. Please create a new profile."})
+    if users[username] != hash_pw(password):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Incorrect password."})
+    # Success
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/index", status_code=303)
+
+
+# Registration page (GET/POST)
+@app.get("/register", response_class=HTMLResponse)
+async def register_get(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_post(request: Request):
+    form = await request.form()
+    username = form.get("username")
+    password = form.get("password")
+    users = load_users()
+    if not username or not password:
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Please provide username and password."})
+    if username in users:
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Profile already exists. Please login."})
+    users[username] = hash_pw(password)
+    save_users(users)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/login", status_code=303)
+
+# Main app page (after login)
+@app.get("/index", response_class=HTMLResponse)
 async def serve_ui(request: Request):
     resp = templates.TemplateResponse("index.html", {"request": request})
     resp.headers["Cache-Control"] = "no-store"
