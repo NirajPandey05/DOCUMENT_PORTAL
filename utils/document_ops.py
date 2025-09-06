@@ -66,11 +66,17 @@ def process_website(url: str) -> List[Document]:
     try:
         import requests
         from bs4 import BeautifulSoup
-        resp = requests.get(url, timeout=10)
+        log.info("process_website: Fetching URL", url=url)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
+        resp = requests.get(url, timeout=10, headers=headers)
+        log.info("process_website: HTTP response", url=url, status_code=resp.status_code, content_length=len(resp.content))
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         # Extract visible text
         text = " ".join(soup.stripped_strings)
+        log.info("process_website: Extracted text", url=url, text_length=len(text))
+        if not text.strip():
+            log.warning("process_website: No visible text extracted from website", url=url)
         return [Document(page_content=text, metadata={"source": url, "type": "website"})]
     except Exception as e:
         log.error("Failed to load website", url=url, error=str(e))

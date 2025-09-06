@@ -129,10 +129,17 @@
         <p class="muted">Upload PDF/DOCX/TXT; we’ll index to FAISS and enable RAG chat.</p>
 
         <form id="form-chat-index" class="form-grid" onsubmit="return false;">
+
           <div class="field">
             <label for="chat-files">Upload files</label>
             <input id="chat-files" type="file" multiple accept=".pdf,.docx,.txt,.ppt,.pptx,.xlsx,.xls,.csv,.md" />
             <small class="help">You can select multiple files.</small>
+          </div>
+
+          <div class="field">
+            <label for="chat-url">Or provide a website URL</label>
+            <input id="chat-url" type="url" placeholder="https://example.com" pattern="https?://.*" />
+            <small class="help">Paste a website link to analyze its content.</small>
           </div>
 
           <div class="grid-3">
@@ -311,18 +318,27 @@
     const overlap   = +document.getElementById("chat-overlap").value || 200;
     const meta      = document.getElementById("chat-meta");
 
-    if (!files.length) { meta.textContent = "Please upload at least one file."; return; }
+
+    // Website URL support
+    const urlInput = document.getElementById("chat-url");
+    const websiteUrl = urlInput ? urlInput.value.trim() : "";
+    if (!files.length && !websiteUrl) {
+      meta.textContent = "Please upload at least one file or provide a website URL.";
+      return;
+    }
 
     try {
       meta.textContent = "Building index…";
 
-      const fd = new FormData();
-      [...files].forEach(f => fd.append("files", f)); // <-- must be 'files'
-      if (sessionId) fd.append("session_id", sessionId);
-      fd.append("use_session_dirs", useSess ? "true" : "false");
-      fd.append("chunk_size", String(chunk));
-      fd.append("chunk_overlap", String(overlap));
-      fd.append("k", String(k));
+
+  const fd = new FormData();
+  [...files].forEach(f => fd.append("files", f)); // <-- must be 'files'
+  if (websiteUrl) fd.append("website_urls", websiteUrl);
+  if (sessionId) fd.append("session_id", sessionId);
+  fd.append("use_session_dirs", useSess ? "true" : "false");
+  fd.append("chunk_size", String(chunk));
+  fd.append("chunk_overlap", String(overlap));
+  fd.append("k", String(k));
 
       const res = await fetch(`${API_BASE}/chat/index`, { method: "POST", body: fd });
       if (!res.ok) {

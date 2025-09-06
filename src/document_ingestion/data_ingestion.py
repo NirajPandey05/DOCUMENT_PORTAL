@@ -187,18 +187,29 @@ class ChatIngestor:
             summary = "[No summary available]"
         return {"summary": summary, "original": chunk.page_content}
     
-    def built_retriver( self,
-        uploaded_files: Iterable,
+
+    def built_retriver(
+        self,
+        uploaded_files: Iterable = (),
+        website_urls: Optional[List[str]] = None,
         *,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
-        k: int = 5,):
+        k: int = 5,
+    ):
+        """
+        Accepts uploaded_files (Iterable of UploadFile) and/or website_urls (list of str).
+        At least one valid document or website must be provided.
+        """
         try:
-            paths = save_uploaded_files(uploaded_files, self.temp_dir)
-            # Enable all supported types and website URLs for chat ingestion
-            docs = load_documents(paths, allow_web=True)
+            paths = save_uploaded_files(uploaded_files, self.temp_dir) if uploaded_files else []
+            url_list = website_urls or []
+            all_inputs = list(paths) + [u for u in url_list if u and u.strip()]
+            if not all_inputs:
+                raise ValueError("Please provide at least one document or website URL.")
+            docs = load_documents(all_inputs, allow_web=True)
             if not docs:
-                raise ValueError("No valid documents loaded")
+                raise ValueError("No valid documents or website content loaded.")
 
             chunks = self._split(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             summarized_chunks = []

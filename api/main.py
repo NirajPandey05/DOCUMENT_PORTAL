@@ -184,9 +184,14 @@ async def compare_documents(reference: UploadFile = File(...), actual: UploadFil
         raise HTTPException(status_code=500, detail=f"Comparison failed: {e}")
 
 # ---------- CHAT: INDEX ----------
+
+from fastapi import Form
+from typing import List, Optional
+
 @app.post("/chat/index")
 async def chat_build_index(
-    files: List[UploadFile] = File(...),
+    files: Optional[List[UploadFile]] = File(None),
+    website_urls: Optional[List[str]] = Form(None),
     session_id: Optional[str] = Form(None),
     use_session_dirs: bool = Form(True),
     chunk_size: int = Form(1000),
@@ -194,19 +199,19 @@ async def chat_build_index(
     k: int = Form(5),
 ) -> Any:
     try:
-        wrapped = [FastAPIFileAdapter(f) for f in files]
-        # this is my main class for storing a data into VDB
-        # created a object of ChatIngestor
+        wrapped = [FastAPIFileAdapter(f) for f in files] if files else []
         ci = ChatIngestor(
             temp_base=UPLOAD_BASE,
             faiss_base=FAISS_BASE,
             use_session_dirs=use_session_dirs,
             session_id=session_id or None,
         )
-        # NOTE: ensure your ChatIngestor saves with index_name="index" or FAISS_INDEX_NAME
-        # e.g., if it calls FAISS.save_local(dir, index_name=FAISS_INDEX_NAME)
-        ci.built_retriver(  # if your method name is actually build_retriever, fix it there as well
-            wrapped, chunk_size=chunk_size, chunk_overlap=chunk_overlap, k=k
+        ci.built_retriver(
+            wrapped,
+            website_urls=website_urls,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            k=k,
         )
         return {"session_id": ci.session_id, "k": k, "use_session_dirs": use_session_dirs}
     except HTTPException:
